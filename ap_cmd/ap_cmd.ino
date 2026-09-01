@@ -246,18 +246,6 @@ void setup() {
 }
 
 void loop() {
-  WiFiClient incoming = server.available();
-  if (incoming && incoming.connected()) {
-    if (client && client.connected()) {
-      client.stop();
-    }
-    client = incoming;
-    client.setNoDelay(true);
-    hadClient = true;
-    resetSession();
-    Serial.println("client matched");
-  }
-
   if (!client || !client.connected()) {
     if (hadClient) {
       client.stop();
@@ -265,7 +253,17 @@ void loop() {
       resetSession();
       Serial.println("waiting for STA...");
     }
-    return;
+
+    WiFiClient incoming = server.available();
+    if (incoming && incoming.connected()) {
+      client = incoming;
+      client.setNoDelay(true);
+      hadClient = true;
+      resetSession();
+      Serial.println("client matched");
+    } else {
+      return;
+    }
   }
 
   while (client.available()) {
