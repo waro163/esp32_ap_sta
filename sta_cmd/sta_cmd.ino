@@ -240,6 +240,7 @@ void setup() {
   digitalWrite(LED_PIN, LED_OFF);
 
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.println("WiFi connecting...");
   lastWifiLogMs = millis();
