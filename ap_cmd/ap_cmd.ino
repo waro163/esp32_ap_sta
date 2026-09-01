@@ -312,6 +312,34 @@ int adcToDuty(int adc) {
   return dutyNow;
 }
 
+bool sendThrottle(uint16_t duty) {
+  uint8_t payload[2];
+  payload[0] = (uint8_t)(duty >> 8);
+  payload[1] = (uint8_t)(duty & 0xFF);
+  return sendFrame(CMD_SET_THROTTLE, payload, 2);
+}
+
+void pollThrottle() {
+  uint32_t now = millis();
+  if (now - lastAdcPollMs < ADC_POLL_MS) {
+    return;
+  }
+  lastAdcPollMs = now;
+
+  lastDuty = adcToDuty(readFilteredAdc());
+
+  if (!client || !client.connected()) {
+    return;
+  }
+  if (!forceSendThrottle && lastDuty == lastSentDuty) {
+    return;
+  }
+  if (sendThrottle((uint16_t)lastDuty)) {
+    lastSentDuty = lastDuty;
+    forceSendThrottle = false;
+  }
+}
+
 void setup() {
   Serial.begin(BAUD);
   delay(200);
@@ -334,6 +362,8 @@ void setup() {
 }
 
 void loop() {
+  pollThrottle();
+
   if (!client || !client.connected()) {
     if (hadClient) {
       client.stop();
@@ -349,6 +379,8 @@ void loop() {
       hadClient = true;
       resetSession();
       Serial.println("client matched");
+      forceSendThrottle = true;
+      lastSentDuty = -1;
     } else {
       return;
     }
