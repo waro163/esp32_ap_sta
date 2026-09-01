@@ -19,6 +19,17 @@
 #define MAX_PAYLOAD 32
 #define SERIAL_LINE_MAX 64
 
+#define ADC_PIN 32
+#define WINDOW_SIZE 10
+#define THRESHOLD 50
+#define CALIBRATE_DISCARD 20
+#define CALIBRATE_SAMPLES 32
+#define MIN_TRAVEL 200
+#define ADC_FULL_SCALE 4095
+#define DUTY_MIN 205
+#define DUTY_MAX 410
+#define ADC_POLL_MS 10
+
 WiFiServer server(TCP_PORT);
 WiFiClient client;
 
@@ -40,6 +51,16 @@ uint8_t parseCmd = 0;
 uint8_t parseLen = 0;
 uint8_t parseGot = 0;
 uint8_t parsePayload[MAX_PAYLOAD];
+
+int adcBuffer[WINDOW_SIZE] = {0};
+int bufferIndex = 0;
+int adcSum = 0;
+int middleValue = 0;
+float dutyUnit = 0;
+int lastDuty = DUTY_MIN;
+int lastSentDuty = -1;
+bool forceSendThrottle = false;
+uint32_t lastAdcPollMs = 0;
 
 void resetParser() {
   parseState = WAIT_H0;
@@ -235,9 +256,67 @@ void handleSerial() {
   }
 }
 
+void calibrateAdc() {
+  analogSetPinAttenuation(ADC_PIN, ADC_11db);
+
+  for (int i = 0; i < CALIBRATE_DISCARD; i++) {
+    analogRead(ADC_PIN);
+    delay(2);
+  }
+
+  long calibSum = 0;
+  for (int i = 0; i < CALIBRATE_SAMPLES; i++) {
+    calibSum += analogRead(ADC_PIN);
+    delay(2);
+  }
+  int initialVal = (int)(calibSum / CALIBRATE_SAMPLES);
+
+  for (int i = 0; i < WINDOW_SIZE; i++) {
+    adcBuffer[i] = initialVal;
+  }
+  adcSum = initialVal * WINDOW_SIZE;
+  bufferIndex = 0;
+  middleValue = initialVal;
+
+  int travel = ADC_FULL_SCALE - middleValue;
+  if (travel < MIN_TRAVEL) {
+    Serial.println("Warning: ADC near full scale at boot, throttle mapping limited.");
+    travel = MIN_TRAVEL;
+  }
+  dutyUnit = (float)(DUTY_MAX - DUTY_MIN) / travel;
+
+  Serial.print("System Initialized. Center Value: ");
+  Serial.println(middleValue);
+}
+
+int readFilteredAdc() {
+  int current = analogRead(ADC_PIN);
+  adcSum = adcSum - adcBuffer[bufferIndex] + current;
+  adcBuffer[bufferIndex] = current;
+  bufferIndex++;
+  if (bufferIndex >= WINDOW_SIZE) {
+    bufferIndex = 0;
+  }
+  return adcSum / WINDOW_SIZE;
+}
+
+int adcToDuty(int adc) {
+  int midDiff = adc - middleValue;
+  if (midDiff < THRESHOLD) {
+    return DUTY_MIN;
+  }
+  int dutyNow = DUTY_MIN + (int)(midDiff * dutyUnit + 0.5f);
+  if (dutyNow > DUTY_MAX) {
+    dutyNow = DUTY_MAX;
+  }
+  return dutyNow;
+}
+
 void setup() {
   Serial.begin(BAUD);
   delay(200);
+
+  calibrateAdc();
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_OFF);
