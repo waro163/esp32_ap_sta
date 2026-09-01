@@ -15,6 +15,7 @@
 #define CMD_PONG 0x02
 #define CMD_SET_LED 0x03
 #define CMD_LED_ACK 0x04
+#define CMD_SET_THROTTLE 0x05
 #define MAX_PAYLOAD 32
 #define SERIAL_LINE_MAX 64
 
@@ -63,6 +64,8 @@ const char *cmdName(uint8_t cmd) {
       return "SET_LED";
     case CMD_LED_ACK:
       return "LED_ACK";
+    case CMD_SET_THROTTLE:
+      return "THROTTLE";
     default:
       return "UNKNOWN";
   }
@@ -74,6 +77,12 @@ void logFrame(const char *dir, uint8_t cmd, const uint8_t *payload, uint8_t len)
   if (cmd == CMD_SET_LED || cmd == CMD_LED_ACK) {
     if (len >= 1) {
       Serial.print(payload[0] ? " on" : " off");
+    }
+  } else if (cmd == CMD_SET_THROTTLE) {
+    if (len >= 2) {
+      uint16_t duty = ((uint16_t)payload[0] << 8) | payload[1];
+      Serial.print(' ');
+      Serial.print(duty);
     }
   }
   Serial.println();
