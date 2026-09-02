@@ -21,6 +21,14 @@
 #define MAX_PAYLOAD 32
 #define SERIAL_LINE_MAX 64
 
+#define ESC_PIN 23
+#define LEDC_CHANNEL 0
+#define ESC_FREQ 50
+#define ESC_RESOLUTION 12
+#define DUTY_MIN 205
+#define DUTY_MAX 410
+#define ESC_ARM_MS 5000
+
 static const IPAddress kApIp(192, 168, 4, 1);
 
 WiFiClient client;
@@ -31,6 +39,11 @@ uint32_t lastPingMs = 0;
 uint32_t lastWifiLogMs = 0;
 uint32_t lastTcpAttemptMs = 0;
 String serialLine;
+uint16_t lastDuty = DUTY_MIN;
+uint16_t pendingDuty = DUTY_MIN;
+uint32_t escArmStartMs = 0;
+bool pendingApply = false;
+bool escArmLogged = false;
 
 enum ParseState {
   WAIT_H0,
@@ -241,12 +254,73 @@ void handleSerial() {
   }
 }
 
+bool escReady() {
+  return (millis() - escArmStartMs) >= ESC_ARM_MS;
+}
+
+void applyDuty(uint16_t duty) {
+  if (duty < DUTY_MIN) {
+    duty = DUTY_MIN;
+  }
+  if (duty > DUTY_MAX) {
+    duty = DUTY_MAX;
+  }
+  pendingDuty = duty;
+  if (!escReady()) {
+    pendingApply = true;
+    return;
+  }
+  if (duty != lastDuty) {
+    ledcWrite(LEDC_CHANNEL, duty);
+    lastDuty = duty;
+  }
+  pendingApply = false;
+}
+
+void stopMotor() {
+  pendingDuty = DUTY_MIN;
+  lastDuty = DUTY_MIN;
+  pendingApply = false;
+  ledcWrite(LEDC_CHANNEL, DUTY_MIN);
+}
+
+void onLinkLost() {
+  stopMotor();
+}
+
+void setupEsc() {
+  ledcSetup(LEDC_CHANNEL, ESC_FREQ, ESC_RESOLUTION);
+  ledcAttachPin(ESC_PIN, LEDC_CHANNEL);
+  ledcWrite(LEDC_CHANNEL, DUTY_MIN);
+  lastDuty = DUTY_MIN;
+  pendingDuty = DUTY_MIN;
+  pendingApply = false;
+  escArmStartMs = millis();
+  Serial.println("正在发送最低油门，解锁电调...");
+  Serial.println("等待电调自检...");
+}
+
+void pollEscArm() {
+  if (!escReady()) {
+    return;
+  }
+  if (!escArmLogged) {
+    escArmLogged = true;
+    Serial.println("电调自检完成，准备启动！");
+  }
+  if (pendingApply) {
+    applyDuty(pendingDuty);
+  }
+}
+
 void setup() {
   Serial.begin(BAUD);
   delay(200);
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_OFF);
+
+  setupEsc();
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -257,6 +331,8 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+
+  pollEscArm();
 
   if (WiFi.status() != WL_CONNECTED) {
     if (wifiWasConnected) {
