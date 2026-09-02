@@ -282,7 +282,7 @@ void applyDuty(uint16_t duty) {
     return;
   }
   if (duty != lastDuty) {
-    ledcWrite(LEDC_CHANNEL, duty);
+    ledcWrite(ESC_PIN, duty);
     lastDuty = duty;
   }
   pendingApply = false;
@@ -292,7 +292,7 @@ void stopMotor() {
   pendingDuty = DUTY_MIN;
   lastDuty = DUTY_MIN;
   pendingApply = false;
-  ledcWrite(LEDC_CHANNEL, DUTY_MIN);
+  ledcWrite(ESC_PIN, DUTY_MIN);
 }
 
 void onLinkLost() {
@@ -300,9 +300,8 @@ void onLinkLost() {
 }
 
 void setupEsc() {
-  ledcSetup(LEDC_CHANNEL, ESC_FREQ, ESC_RESOLUTION);
-  ledcAttachPin(ESC_PIN, LEDC_CHANNEL);
-  ledcWrite(LEDC_CHANNEL, DUTY_MIN);
+  ledcAttachChannel(ESC_PIN, ESC_FREQ, ESC_RESOLUTION, LEDC_CHANNEL);
+  ledcWrite(ESC_PIN, DUTY_MIN);
   lastDuty = DUTY_MIN;
   pendingDuty = DUTY_MIN;
   pendingApply = false;
