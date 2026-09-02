@@ -165,6 +165,17 @@ void handleFrame(uint8_t cmd, const uint8_t *payload, uint8_t len) {
       }
       logFrame("rx: ", cmd, payload, len);
       break;
+    case CMD_SET_THROTTLE:
+      if (len != 2) {
+        Serial.println("bad frame");
+        return;
+      }
+      logFrame("rx: ", cmd, payload, len);
+      {
+        uint16_t duty = ((uint16_t)payload[0] << 8) | payload[1];
+        applyDuty(duty);
+      }
+      break;
     default:
       Serial.println("bad frame");
       break;
@@ -340,6 +351,7 @@ void loop() {
       tcpAnnounced = false;
       client.stop();
       resetSession();
+      onLinkLost();
       WiFi.begin(WIFI_SSID, WIFI_PASS);
     }
     if (now - lastWifiLogMs >= WIFI_RETRY_MS) {
@@ -360,6 +372,7 @@ void loop() {
       tcpAnnounced = false;
       client.stop();
       resetSession();
+      onLinkLost();
     }
     if (now - lastTcpAttemptMs >= TCP_RETRY_MS) {
       lastTcpAttemptMs = now;
