@@ -30,14 +30,19 @@
 
 ## Cmd 验收
 
+油门硬件：AP 摇杆 ADC 接 GPIO32；STA 电调信号接 GPIO23。先 AP 后 STA。STA 上电约 5 秒电调自检期间 TCP/LED 仍可用，油门指令会等到自检结束再落地。
+
 1. 打开 `ap_cmd` 烧录并开串口，再打开 `sta_cmd` 烧录并开串口
 2. 匹配成功后两边周期性出现 `tx: PING` 和 `rx: PONG`（也会看到对端的 `rx: PING` 与本端 `tx: PONG`）
 3. 在 AP 串口输入 `on` 回车 → STA 板载灯亮，AP 出现 `rx: LED_ACK on`
 4. 在 STA 串口输入 `off` 回车 → AP 板载灯灭，STA 出现 `rx: LED_ACK off`
 5. 输入 `foo` → 打印 `unknown cmd`
 6. 若板载灯电平相反：只改对应 sketch 顶部的 `LED_ON` / `LED_OFF`
+7. AP 上电打印 `Center Value:`。摇杆回中时 STA 电调保持最低油门；推高则加速，松开则回最低油门
+8. AP 仅在真正发送时打印 `tx: THROTTLE <duty>`，不要每 10ms 刷 ADC
+9. 拔掉 STA：电机立刻停。插回匹配后，若摇杆仍在高位，电机恢复到对应油门
 
-坏帧（checksum 错或未知 cmd）打印 `bad frame`，TCP 保持连接，之后 ping/pong 仍继续。
+坏帧（checksum 错或未知 cmd）打印 `bad frame`，TCP 保持连接，之后 ping/pong 仍继续。油门坏帧（len≠2）同样只打印 `bad frame`，电机保持当前 duty（断线除外）。
 
 ## Cmd 协议
 
@@ -57,7 +62,7 @@ AP 和 STA 用同一套二进制帧，必须两边一起改，否则对端会当
 
 - 最小帧 5 字节（无 payload）
 - checksum = `cmd XOR len XOR payload[0] XOR ... XOR payload[len-1]`（不含两个同步头）
-- 例子：PING = `AA 55 01 00 01`；SET_LED on = `AA 55 03 01 01 03`
+- 例子：PING = `AA 55 01 00 01`；SET_LED on = `AA 55 03 01 01 03`；SET_THROTTLE duty=205 → `AA 55 05 02 00 CD cs`（cs = 0x05 XOR 0x02 XOR 0x00 XOR 0xCD）
 
 ### 指令表
 
@@ -67,16 +72,17 @@ AP 和 STA 用同一套二进制帧，必须两边一起改，否则对端会当
 | `0x02` | `CMD_PONG` | 无（len=0） | 收到 PING 的一方 | 串口打印 `rx: PONG` |
 | `0x03` | `CMD_SET_LED` | 1 字节：`0x00` 灭，`0x01` 亮 | 本机串口输入 `on` / `off` | 写 GPIO 2，回 `CMD_LED_ACK`（回显同一状态） |
 | `0x04` | `CMD_LED_ACK` | 1 字节：回显的亮灭 | 被控端 | 串口打印 `rx: LED_ACK on` 或 `off` |
-| `0x05`…`0xFF` | （未使用） | — | — | 当前会打印 `bad frame` 并丢弃，不断开 TCP |
+| `0x05` | `CMD_SET_THROTTLE` | 2 字节大端 uint16：PWM duty（205–410） | AP：duty 变化或 TCP 刚匹配 | STA 钳位后写电调 PWM，无 ACK |
+| `0x06`…`0xFF` | （未使用） | — | — | 当前会打印 `bad frame` 并丢弃，不断开 TCP |
 
 串口只认两行文本（与 cmd 码的对应）：`on` → SET_LED(1)，`off` → SET_LED(0)。其他非空行打印 `unknown cmd`。
 
 ### 以后怎么加新指令
 
-`ap_cmd/ap_cmd.ino` 和 `sta_cmd/sta_cmd.ino` 各改一遍，命令码和 payload 必须一致。假设要加「蜂鸣」`CMD_BEEP = 0x05`，payload 1 字节表示时长：
+`ap_cmd/ap_cmd.ino` 和 `sta_cmd/sta_cmd.ino` 各改一遍，命令码和 payload 必须一致。假设要加「蜂鸣」`CMD_BEEP = 0x06`，payload 1 字节表示时长：
 
 1. **占用一个未用 cmd**  
-   在两份 sketch 顶部宏区追加 `#define CMD_BEEP 0x05`。不要复用 `0x01`–`0x04`。
+   在两份 sketch 顶部宏区追加 `#define CMD_BEEP 0x06`。不要复用 `0x01`–`0x05`。
 
 2. **补日志名**  
    在 `cmdName()` 的 `switch` 里加 `case CMD_BEEP: return "BEEP";`。
