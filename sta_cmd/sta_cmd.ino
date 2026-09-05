@@ -4,7 +4,6 @@
 #define WIFI_PASS "esp32link"
 #define TCP_PORT 8080
 #define BAUD 115200
-#define SEND_INTERVAL_MS 1000
 #define WIFI_RETRY_MS 500
 #define TCP_RETRY_MS 1000
 #define LED_PIN 2
@@ -19,7 +18,6 @@
 #define CMD_LED_ACK 0x04
 #define CMD_SET_THROTTLE 0x05
 #define MAX_PAYLOAD 32
-#define SERIAL_LINE_MAX 64
 
 #define ESC_PIN 23
 #define LEDC_CHANNEL 0
@@ -35,10 +33,8 @@ WiFiClient client;
 
 bool wifiWasConnected = false;
 bool tcpAnnounced = false;
-uint32_t lastPingMs = 0;
 uint32_t lastWifiLogMs = 0;
 uint32_t lastTcpAttemptMs = 0;
-String serialLine;
 uint16_t lastDuty = DUTY_MIN;
 uint16_t pendingDuty = DUTY_MIN;
 uint32_t escArmStartMs = 0;
@@ -69,8 +65,6 @@ void resetParser() {
 
 void resetSession() {
   resetParser();
-  lastPingMs = 0;
-  serialLine = "";
 }
 
 const char *cmdName(uint8_t cmd) {
@@ -236,35 +230,6 @@ void feedByte(uint8_t b) {
   }
 }
 
-void handleSerial() {
-  while (Serial.available()) {
-    char c = (char)Serial.read();
-    if (c == '\r') {
-      continue;
-    }
-    if (c == '\n') {
-      serialLine.trim();
-      if (serialLine.length() > 0) {
-        if (serialLine == "on") {
-          uint8_t on = 1;
-          sendFrame(CMD_SET_LED, &on, 1);
-        } else if (serialLine == "off") {
-          uint8_t on = 0;
-          sendFrame(CMD_SET_LED, &on, 1);
-        } else {
-          Serial.println("unknown cmd");
-        }
-      }
-      serialLine = "";
-    } else {
-      serialLine += c;
-      if (serialLine.length() > SERIAL_LINE_MAX) {
-        serialLine = "";
-      }
-    }
-  }
-}
-
 bool escReady() {
   return (millis() - escArmStartMs) >= ESC_ARM_MS;
 }
@@ -389,13 +354,5 @@ void loop() {
 
   while (client.available()) {
     feedByte((uint8_t)client.read());
-  }
-
-  handleSerial();
-
-  now = millis();
-  if (now - lastPingMs >= SEND_INTERVAL_MS) {
-    lastPingMs = now;
-    sendFrame(CMD_PING, NULL, 0);
   }
 }
