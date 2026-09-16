@@ -20,6 +20,7 @@
 #define MAX_PAYLOAD 32
 
 #define ESC_PIN 23
+#define ESC_PIN_2 22
 #define LEDC_CHANNEL 0
 #define ESC_FREQ 50
 #define ESC_RESOLUTION 12
@@ -234,6 +235,11 @@ bool escReady() {
   return (millis() - escArmStartMs) >= ESC_ARM_MS;
 }
 
+void writeEscDuty(uint16_t duty) {
+  ledcWrite(ESC_PIN, duty);
+  ledcWrite(ESC_PIN_2, duty);
+}
+
 void applyDuty(uint16_t duty) {
   if (duty < DUTY_MIN) {
     duty = DUTY_MIN;
@@ -247,7 +253,7 @@ void applyDuty(uint16_t duty) {
     return;
   }
   if (duty != lastDuty) {
-    ledcWrite(ESC_PIN, duty);
+    writeEscDuty(duty);
     lastDuty = duty;
   }
   pendingApply = false;
@@ -257,7 +263,7 @@ void stopMotor() {
   pendingDuty = DUTY_MIN;
   lastDuty = DUTY_MIN;
   pendingApply = false;
-  ledcWrite(ESC_PIN, DUTY_MIN);
+  writeEscDuty(DUTY_MIN);
 }
 
 void onLinkLost() {
@@ -266,7 +272,8 @@ void onLinkLost() {
 
 void setupEsc() {
   ledcAttachChannel(ESC_PIN, ESC_FREQ, ESC_RESOLUTION, LEDC_CHANNEL);
-  ledcWrite(ESC_PIN, DUTY_MIN);
+  ledcAttachChannel(ESC_PIN_2, ESC_FREQ, ESC_RESOLUTION, LEDC_CHANNEL);
+  writeEscDuty(DUTY_MIN);
   lastDuty = DUTY_MIN;
   pendingDuty = DUTY_MIN;
   pendingApply = false;
